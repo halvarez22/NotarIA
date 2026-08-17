@@ -1,0 +1,5 @@
+{
+  "name": "Digestor de Documentos IA",
+  "description": "Una aplicación intuitiva y elegante impulsada por IA para digerir y responder preguntas sobre tus documentos (PDF, TXT, PNG, JPG). Sube un archivo y la IA aprenderá su contenido para proporcionar respuestas precisas.",
+  "requestFramePermissions": []
+}
