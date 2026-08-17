@@ -1,6 +1,6 @@
-# Digestor de Documentos LicitAI (v1.0)
+# NotarIA (v1.0)
 
-Sistema Enterprise para procesamiento, OCR y chat inteligente con bases de licitación y contratos legales. Desarrollado con el patrón de arquitectura Strangler Fig.
+Sistema Enterprise para procesamiento, OCR y chat inteligente con escrituras, actas constitutivas, planos y avalúos. Desarrollado con el patrón de arquitectura Strangler Fig.
 
 ## Arquitectura (Anti-God-Component)
 - **Capa 1 (Backend)**: FastAPI + PyMuPDF (OCR) + ChromaDB (Vector Store) + Ollama (`llama3.1:8b`). Procesamiento 100% local, seguro y asíncrono.

@@ -30,8 +30,8 @@ export function UploadScreen({ status, progress, errorMessage, onFileSelect, onR
   return (
     <div className="flex flex-col items-center justify-center h-full min-h-[400px] p-6 bg-brand-darkest text-white rounded-lg shadow-xl border border-brand-medium">
       <div className="text-center mb-8">
-        <h2 className="text-3xl font-bold text-brand-gold mb-2">Digestor LicitAI</h2>
-        <p className="text-gray-400">Sube tus bases de licitación o contratos</p>
+        <h2 className="text-3xl font-bold text-brand-gold mb-2">NotarIA</h2>
+        <p className="text-gray-400">Sube escrituras, actas constitutivas, avalúos o planos</p>
       </div>
 
       {status === 'idle' && (

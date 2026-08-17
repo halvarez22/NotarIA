@@ -31,7 +31,7 @@ export function ChatScreen({ documentId, onReset }: ChatScreenProps) {
       {/* Header */}
       <div className="flex justify-between items-center p-4 bg-brand-dark border-b border-brand-medium">
         <div>
-          <h2 className="text-xl font-bold text-brand-gold">Asistente Legal IA</h2>
+          <h2 className="text-xl font-bold text-brand-gold">Asistente NotarIA</h2>
           <p className="text-xs text-green-400">ID: {documentId.slice(0, 10)}... • Llama3.1:8b</p>
         </div>
         <button 
