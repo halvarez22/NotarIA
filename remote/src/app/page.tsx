@@ -15,10 +15,10 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const router = useRouter();
 
-  // Instanciar cliente de Supabase para el navegador
+  // Instanciar cliente de Supabase para el navegador (con fallback para Vercel Build)
   const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder_key'
   );
 
   const handleLogin = async (e: React.FormEvent) => {
