@@ -10,7 +10,13 @@ export default function ChatRemotePage({ params }: { params: Promise<{ id: strin
   const router = useRouter();
   const { id } = use(params);
 
-  const [messages, setMessages] = useState([
+  interface Message {
+    role: 'user' | 'assistant';
+    content: string;
+    sources?: any[];
+  }
+
+  const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: 'Soy el buscador semántico de este expediente. ¿Qué cláusula o concepto necesitas localizar hoy?' }
   ]);
   const [input, setInput] = useState('');
