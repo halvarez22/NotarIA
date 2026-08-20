@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NotarIA Edge Ingest - Pro Version</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #D4A43A;
+            --primary-glow: rgba(212, 164, 58, 0.5);
+            --bg-dark: #0A1128;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            background: linear-gradient(135deg, #0A1128 0%, #06101E 100%);
+            color: #f8fafc;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Glassmorphism */
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Isometric 3D Canvas */
+        .isometric-canvas {
+            perspective: 1500px;
+            transform-style: preserve-3d;
+            position: relative;
+            height: 500px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .isometric-layer {
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            background: rgba(30, 41, 59, 0.4);
+            border: 2px solid rgba(255,255,255,0.05);
+            transform: rotateX(60deg) rotateZ(-45deg);
+            border-radius: 20px;
+            box-shadow: 
+                -20px 20px 40px rgba(0,0,0,0.4),
+                inset 0 0 20px rgba(212, 164, 58, 0.05);
+            transition: all 0.5s ease;
+        }
+
+        /* Node Nodes inside Isometric */
+        .iso-node {
+            position: absolute;
+            transform: rotateX(60deg) rotateZ(-45deg) translateZ(50px);
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 15px;
+            width: 220px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            backdrop-filter: blur(8px);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0.5;
+            filter: grayscale(100%);
+        }
+
+        .iso-node i {
+            font-size: 1.5rem;
+            color: #94a3b8;
+        }
+
+        /* Positions */
+        #node-uploading { top: 10%; left: 10%; }
+        #node-extracting_text { top: 30%; left: 30%; }
+        #node-indexing { top: 50%; left: 50%; }
+        #node-syncing_to_cloud { top: 70%; left: 70%; transform: rotateX(60deg) rotateZ(-45deg) translateZ(100px); }
+        #node-completed { top: 90%; left: 90%; transform: rotateX(60deg) rotateZ(-45deg) translateZ(120px); }
+
+        /* States */
+        .iso-node.active {
+            opacity: 1;
+            filter: grayscale(0%);
+            border-color: var(--primary);
+            box-shadow: 0 0 30px var(--primary-glow);
+            transform: rotateX(60deg) rotateZ(-45deg) translateZ(80px);
+        }
+        
+        .iso-node.active i {
+            color: var(--primary);
+            animation: pulse 2s infinite;
+        }
+
+        .iso-node.done {
+            opacity: 0.8;
+            filter: grayscale(0%);
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .iso-node.done i {
+            color: #10b981;
+        }
+
+        /* Custom Inputs */
+        .glass-input {
+            background: rgba(0,0,0,0.2);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            transition: all 0.3s;
+        }
+        .glass-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(212,164,58,0.2);
+            outline: none;
+        }
+
+        .btn-gold {
+            background: linear-gradient(135deg, #D4A43A 0%, #B48825 100%);
+            color: #000;
+            font-weight: 600;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(212, 164, 58, 0.3);
+        }
+        .btn-gold:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(212, 164, 58, 0.5);
+        }
+        .btn-gold:disabled {
+            background: #475569;
+            color: #94a3b8;
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Loader */
+        .spinner {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+        .active .spinner { display: block; }
+        .active i.fa-solid { display: none; }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); text-shadow: 0 0 10px var(--primary); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body class="antialiased">
+
+<!-- Auth Modal -->
+<div id="modal-auth" style="display: none; position: fixed; inset: 0; background: rgba(2, 6, 23, 0.8); backdrop-filter: blur(10px); z-index: 50; align-items: center; justify-content: center;">
+    <div class="glass p-8 rounded-2xl w-full max-w-md mx-4 shadow-2xl border border-[rgba(255,255,255,0.1)]">
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#D4A43A]/10 mb-4">
+                <i class="fa-solid fa-shield-halved text-3xl text-[#D4A43A]"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Edge Security</h2>
+            <p class="text-slate-400 text-sm mt-2">Autorización requerida para Ingesta Local</p>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">Bearer Token</label>
+                <input type="password" id="api-key" class="glass-input w-full px-4 py-3 rounded-xl" placeholder="default_dev_key...">
+            </div>
+            <button onclick="AuthModule.saveKey()" class="btn-gold w-full py-3 rounded-xl flex items-center justify-center gap-2">
+                <i class="fa-solid fa-unlock"></i> Autorizar Acceso
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Main App -->
+<div id="app-main" class="container mx-auto px-4 py-8 max-w-7xl hidden">
+    <header class="flex justify-between items-center mb-12">
+        <div class="flex items-center gap-4">
+            <div class="w-24 h-24 flex items-center justify-center mr-2">
+                <img src="./logo_NotarIA.png" alt="NotarIA Logo" class="w-full h-full object-contain drop-shadow-xl rounded-2xl hover:scale-105 transition-transform">
+            </div>
+            <div>
+                <h1 class="text-4xl font-bold tracking-tight text-white">NotarIA <span class="text-slate-400 font-light">Edge Ingestor</span></h1>
+                <p class="text-xs text-emerald-400 flex items-center gap-2 mt-1"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Conexión Local Segura</p>
+            </div>
+        </div>
+        <button onclick="AuthModule.logout()" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2 px-4 py-2 rounded-lg glass">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i> Desconectar
+        </button>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+        <!-- UI Left: Controls -->
+        <div class="lg:col-span-4 space-y-6 relative z-10">
+            <div class="glass p-8 rounded-2xl shadow-xl">
+                <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
+                    <i class="fa-solid fa-file-import text-[#D4A43A]"></i> Carga de Documento
+                </h3>
+                
+                <div id="error-container" class="hidden mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-start gap-3">
+                    <i class="fa-solid fa-triangle-exclamation mt-1"></i>
+                    <span id="error-text"></span>
+                </div>
+
+                <div class="space-y-5">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Expediente Destino</label>
+                        <input type="text" id="expediente-nombre" class="glass-input w-full px-4 py-3 rounded-xl text-sm" value="Escrituras Del Canto">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Archivo PDF</label>
+                        <div class="relative group cursor-pointer">
+                            <input type="file" id="file" accept="application/pdf" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onchange="document.getElementById('file-name').textContent = this.files[0] ? this.files[0].name : 'Seleccionar archivo PDF...'">
+                            <div class="glass-input w-full px-4 py-4 rounded-xl border-dashed border-2 flex flex-col items-center justify-center gap-2 group-hover:border-[#D4A43A] transition-colors">
+                                <i class="fa-regular fa-file-pdf text-3xl text-slate-400 group-hover:text-[#D4A43A] transition-colors"></i>
+                                <span id="file-name" class="text-sm text-slate-400">Seleccionar archivo PDF...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="btn-upload" onclick="AppFlow.startUpload()" class="btn-gold w-full py-4 rounded-xl flex items-center justify-center gap-3 mt-4 text-sm uppercase tracking-wide">
+                        <i class="fa-solid fa-microchip"></i> Procesar y Sincronizar
+                    </button>
+                </div>
+            </div>
+            
+            <div class="glass p-6 rounded-2xl">
+                <h4 class="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-3">INFORMACIÓN DEL SISTEMA</h4>
+                <ul class="space-y-2 text-sm text-slate-300">
+                    <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Modelo RAG: nomic-embed-text</li>
+                    <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> LLM Inferencia: Groq / Llama 3.1</li>
+                    <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Vector DB: Supabase pgvector</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- UI Right: Isometric Architecture Graphic -->
+        <div class="lg:col-span-8 relative">
+            <div class="isometric-canvas" id="status-panel">
+                <div class="isometric-layer" style="transform: rotateX(60deg) rotateZ(-45deg) translateZ(0);"></div>
+                <div class="isometric-layer" style="transform: rotateX(60deg) rotateZ(-45deg) translateZ(100px); border-color: rgba(59, 130, 246, 0.2); background: rgba(15, 23, 42, 0.2);"></div>
+
+                <!-- Process Nodes -->
+                <div class="iso-node" id="node-uploading">
+                    <div class="spinner"></div><i class="fa-solid fa-hard-drive"></i>
+                    <div>
+                        <p class="text-xs font-bold text-white uppercase">Ingesta Local</p>
+                        <p class="text-[10px] text-slate-400 font-mono">FastAPI Core</p>
+                    </div>
+                </div>
+
+                <div class="iso-node" id="node-extracting_text">
+                    <div class="spinner"></div><i class="fa-solid fa-file-waveform"></i>
+                    <div>
+                        <p class="text-xs font-bold text-white uppercase">OCR / Parsing</p>
+                        <p class="text-[10px] text-slate-400 font-mono">Text Extraction</p>
+                    </div>
+                </div>
+
+                <div class="iso-node" id="node-indexing">
+                    <div class="spinner"></div><i class="fa-solid fa-brain"></i>
+                    <div>
+                        <p class="text-xs font-bold text-white uppercase">Vectorización</p>
+                        <p class="text-[10px] text-slate-400 font-mono">Ollama Local</p>
+                    </div>
+                </div>
+
+                <div class="iso-node" id="node-syncing_to_cloud">
+                    <div class="spinner"></div><i class="fa-solid fa-cloud-arrow-up"></i>
+                    <div>
+                        <p class="text-xs font-bold text-white uppercase">Sincronización</p>
+                        <p class="text-[10px] text-slate-400 font-mono">Supabase Push</p>
+                    </div>
+                </div>
+
+                <div class="iso-node" id="node-completed">
+                    <div class="spinner"></div><i class="fa-solid fa-circle-check"></i>
+                    <div>
+                        <p class="text-xs font-bold text-white uppercase">Completado</p>
+                        <p class="text-[10px] text-emerald-400 font-mono">Data Ready</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_URL = "http://127.0.0.1:8000/api";
+
+    const AuthModule = {
+        getKey: () => localStorage.getItem('notaria_api_key'),
+        check: () => {
+            if (AuthModule.getKey()) {
+                document.getElementById('modal-auth').style.display = 'none';
+                document.getElementById('app-main').classList.remove('hidden');
+                document.getElementById('app-main').style.display = 'block';
+            } else {
+                document.getElementById('modal-auth').style.display = 'flex';
+                document.getElementById('app-main').style.display = 'none';
+            }
+        },
+        saveKey: () => {
+            const key = document.getElementById('api-key').value;
+            if (key) {
+                localStorage.setItem('notaria_api_key', key);
+                AuthModule.check();
+            }
+        },
+        logout: () => {
+            localStorage.removeItem('notaria_api_key');
+            AuthModule.check();
+        }
+    };
+
+    const UIModule = {
+        showError: (msg) => {
+            const el = document.getElementById('error-container');
+            document.getElementById('error-text').innerText = msg;
+            el.classList.remove('hidden');
+        },
+        hideError: () => { 
+            document.getElementById('error-container').classList.add('hidden');
+        },
+        resetStages: () => {
+            document.querySelectorAll('.iso-node').forEach(el => {
+                el.classList.remove('active', 'done');
+            });
+        },
+        setStage: (stageId) => {
+            document.querySelectorAll('.iso-node').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            const states = ['uploading', 'extracting_text', 'indexing', 'syncing_to_cloud', 'completed'];
+            let found = false;
+            for(let state of states) {
+                const el = document.getElementById('node-' + state);
+                if (!el) continue;
+                if (state === stageId) {
+                    el.classList.add('active');
+                    el.classList.remove('done');
+                    found = true;
+                } else if (!found) {
+                    el.classList.add('done');
+                    el.classList.remove('active');
+                }
+            }
+        }
+    };
+
+    const NetworkModule = {
+        authFetch: async (endpoint, options = {}) => {
+            const key = AuthModule.getKey();
+            if (!key) throw new Error("No hay API Key. Inicia sesión nuevamente.");
+            
+            const headers = options.headers || {};
+            if (!(options.body instanceof FormData)) {
+                if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+            }
+            headers['Authorization'] = 'Bearer ' + key;
+            
+            try {
+                const res = await fetch(API_URL + endpoint, { ...options, headers });
+                
+                if (res.status === 401) {
+                    AuthModule.logout();
+                    throw new Error("401 No Autorizado. Llave inválida o expirada.");
+                }
+                
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.detail ? JSON.stringify(data.detail) : ("Error HTTP " + res.status));
+                }
+                
+                return await res.json();
+            } catch (err) {
+                if (err.message.includes('Failed to fetch')) {
+                    throw new Error("No se pudo conectar con FastAPI en el puerto 8000");
+                }
+                throw err;
+            }
+        }
+    };
+
+    let pollingInterval = null;
+    const PollingModule = {
+        start: (taskId) => {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(async () => {
+                try {
+                    const data = await NetworkModule.authFetch("/status/" + taskId);
+                    UIModule.setStage(data.status);
+                    
+                    if (data.status === "completed") {
+                        clearInterval(pollingInterval);
+                        document.getElementById('btn-upload').disabled = false;
+                        document.getElementById('btn-upload').innerHTML = '<i class="fa-solid fa-check"></i> Finalizado con Éxito';
+                        setTimeout(() => {
+                            document.getElementById('btn-upload').innerHTML = '<i class="fa-solid fa-microchip"></i> Procesar y Sincronizar';
+                        }, 3000);
+                    }
+                    if (data.status === "error" || data.status === "error_sync") {
+                        clearInterval(pollingInterval);
+                        UIModule.showError("Falló en el servidor: " + data.status);
+                        document.getElementById('btn-upload').disabled = false;
+                        document.getElementById('btn-upload').innerHTML = '<i class="fa-solid fa-rotate-right"></i> Reintentar';
+                    }
+                } catch (err) {
+                    clearInterval(pollingInterval);
+                    UIModule.showError("Perdida conexión: " + err.message);
+                    document.getElementById('btn-upload').disabled = false;
+                }
+            }, 2000);
+        }
+    };
+
+    const AppFlow = {
+        startUpload: async () => {
+            UIModule.hideError();
+            
+            const fileInput = document.getElementById('file');
+            if (fileInput.files.length === 0) {
+                UIModule.showError("Por favor selecciona un archivo PDF.");
+                return;
+            }
+            const file = fileInput.files[0];
+            
+            const expName = document.getElementById('expediente-nombre').value || "Expediente Local";
+            const btn = document.getElementById('btn-upload');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Inicializando...';
+            
+            UIModule.resetStages();
+            UIModule.setStage('uploading');
+
+            try {
+                const expData = await NetworkModule.authFetch("/expedientes", {
+                    method: 'POST',
+                    body: JSON.stringify({ nombre: expName })
+                });
+                
+                const formData = new FormData();
+                formData.append("file", file);
+                formData.append("expediente_id", expData.id || "dummy_exp");
+                formData.append("custom_name", file.name);
+
+                btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Transfiriendo...';
+
+                const uploadData = await NetworkModule.authFetch("/upload", {
+                    method: 'POST',
+                    body: formData
+                });
+
+                btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Procesando...';
+                PollingModule.start(uploadData.task_id);
+
+            } catch (err) {
+                UIModule.showError(err.message);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-microchip"></i> Procesar y Sincronizar';
+            }
+        }
+    };
+
+    AuthModule.check();
+</script>
+</body>
+</html>

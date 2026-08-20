@@ -5,17 +5,18 @@ interface UploadScreenProps {
   status: UploadStatus;
   progress: number;
   errorMessage: string | null;
+  metrics?: { pages: number, chunks: number } | null;
   onFileSelect: (file: File) => void;
+  onProceed?: () => void;
   onRetry: () => void;
 }
 
-export function UploadScreen({ status, progress, errorMessage, onFileSelect, onRetry }: UploadScreenProps) {
+export function UploadScreen({ status, progress, errorMessage, metrics, onFileSelect, onProceed, onRetry }: UploadScreenProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onFileSelect(file);
+    if (e.target.files && e.target.files.length > 0) {
+      onFileSelect(e.target.files[0]);
     }
   };
 
@@ -57,7 +58,7 @@ export function UploadScreen({ status, progress, errorMessage, onFileSelect, onR
       )}
 
       {isBusy && (
-        <div className="w-full max-w-md p-6 bg-brand-dark rounded-xl border border-brand-medium">
+        <div className="w-full max-w-md p-6 bg-brand-dark rounded-xl border border-brand-medium animate-pulse">
           <div className="flex justify-between mb-2">
             <span className="text-sm font-medium text-gray-200">
               {getStatusMessage()}
@@ -66,25 +67,47 @@ export function UploadScreen({ status, progress, errorMessage, onFileSelect, onR
           </div>
           <div className="w-full bg-gray-700 rounded-full h-2.5">
             <div 
-              className="bg-brand-gold h-2.5 rounded-full transition-all duration-500" 
+              className="bg-brand-gold h-2.5 rounded-full transition-all duration-300" 
               style={{ width: `${progress}%` }}
             ></div>
           </div>
         </div>
       )}
 
+      {status === 'success_feedback' && (
+        <div className="w-full max-w-md p-6 bg-green-900/20 border border-green-500/50 rounded-xl text-center animate-fade-in-up">
+          <div className="mb-4">
+            <svg className="mx-auto h-12 w-12 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-green-400 mb-2">Documento procesado con éxito</h3>
+          <p className="text-gray-300 mb-6">
+            Se analizaron <strong className="text-white">{metrics?.pages || 0}</strong> páginas y se generaron <strong className="text-white">{metrics?.chunks || 0}</strong> fragmentos de contexto.
+          </p>
+          <button 
+            onClick={onProceed}
+            className="w-full py-3 bg-brand-gold hover:bg-yellow-500 text-brand-darkest font-bold rounded transition-colors shadow-lg"
+          >
+            Comenzar Análisis
+          </button>
+        </div>
+      )}
+
       {status === 'error' && (
-        <div className="w-full max-w-md p-6 bg-red-900/30 rounded-xl border border-red-500 text-center">
-          <svg className="mx-auto h-12 w-12 text-red-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <h3 className="text-lg font-bold text-red-400 mb-2">Error al procesar</h3>
-          <p className="text-red-200 text-sm mb-6">{errorMessage}</p>
+        <div className="w-full max-w-md p-6 bg-red-900/30 border border-red-500/50 rounded-xl text-center">
+          <div className="mb-4">
+            <svg className="mx-auto h-12 w-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-red-400 mb-2">Error de Procesamiento</h3>
+          <p className="text-gray-300 mb-6">{errorMessage || 'Ha ocurrido un error inesperado.'}</p>
           <button 
             onClick={onRetry}
-            className="px-6 py-2 bg-brand-gold text-brand-darkest font-bold rounded hover:bg-yellow-500 transition-colors"
+            className="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
           >
-            Reintentar
+            Intentar nuevamente
           </button>
         </div>
       )}

@@ -33,8 +33,18 @@ class RAGService:
         
         chunks = self.splitter.split_text(safe_text)
         if not chunks:
-            return
+            return None
             
         metadatas = [{"task_id": task_id, "chunk": i} for i in range(len(chunks))]
         self.vectorstore.add_texts(texts=chunks, metadatas=metadatas)
         # Chroma persiste automáticamente
+        
+        # Generar embeddings crudos para Supabase
+        raw_embeddings = self.embeddings.embed_documents(chunks)
+        
+        return {
+            "chunks": len(chunks),
+            "pages": max(1, len(text) // 2500), # Estimación conservadora de páginas
+            "raw_chunks": chunks,
+            "raw_embeddings": raw_embeddings
+        }

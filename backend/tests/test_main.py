@@ -23,7 +23,8 @@ def test_routing_and_idempotency(tmp_path):
     
     with open(test_file, "rb") as f:
         files = {"file": ("test.txt", f, "text/plain")}
-        res1 = client.post("/api/upload", headers=headers, files=files)
+        data_form = {"expediente_id": "test-exp-123"}
+        res1 = client.post("/api/upload", headers=headers, files=files, data=data_form)
         assert res1.status_code == 200
         data1 = res1.json()
         assert "task_id" in data1
@@ -33,7 +34,8 @@ def test_routing_and_idempotency(tmp_path):
     # Idempotency: Volver a subir el mismo archivo debe generar el mismo task_id
     with open(test_file, "rb") as f:
         files = {"file": ("test.txt", f, "text/plain")}
-        res2 = client.post("/api/upload", headers=headers, files=files)
+        data_form = {"expediente_id": "test-exp-123"}
+        res2 = client.post("/api/upload", headers=headers, files=files, data=data_form)
         assert res2.status_code == 200
         data2 = res2.json()
         assert data1["task_id"] == data2["task_id"]
@@ -44,5 +46,6 @@ def test_unsupported_mime(tmp_path):
     test_file.write_text("basura")
     with open(test_file, "rb") as f:
         files = {"file": ("test.xyz", f, "application/octet-stream")}
-        res = client.post("/api/upload", headers=headers, files=files)
+        data_form = {"expediente_id": "test-exp-123"}
+        res = client.post("/api/upload", headers=headers, files=files, data=data_form)
         assert res.status_code == 422

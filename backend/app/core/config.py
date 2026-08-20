@@ -7,8 +7,10 @@ class Settings(BaseSettings):
     OCR_MODEL: str = "glm-ocr:latest"
     EMBEDDING_MODEL: str = "nomic-embed-text:latest"
     CHAT_MODEL: str = "llama3.1:8b"
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
     
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 @lru_cache()
 def get_settings():

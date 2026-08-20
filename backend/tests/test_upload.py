@@ -8,15 +8,15 @@ from app.services.upload_service import UploadService, tasks_db
 async def test_background_process_pdf(mock_rag_class, mock_ocr_class):
     mock_ocr = mock_ocr_class.return_value
     mock_rag = mock_rag_class.return_value
-    # Para asincronía en Python 3.8+
     mock_ocr.process_pdf = __import__("unittest").mock.AsyncMock(return_value="Texto del PDF extraido")
+    mock_rag.index_document = MagicMock(return_value={"pages": 1, "chunks": 5})
     
     service = UploadService()
     service.ocr_service = mock_ocr
     service.rag_service = mock_rag
     
-    # Test file process
-    await service._background_process("hash_123", "application/pdf", b"fake_pdf_content")
+    # Test file process using wrapper to catch exceptions
+    await service._background_process_wrapper("hash_123", "application/pdf", b"fake_pdf_content")
     
     # Assertions
     assert mock_ocr.process_pdf.called
@@ -34,7 +34,7 @@ async def test_background_process_error(mock_rag_class, mock_ocr_class):
     service = UploadService()
     service.ocr_service = mock_ocr
     
-    await service._background_process("hash_456", "application/pdf", b"fake_pdf_content")
+    await service._background_process_wrapper("hash_456", "application/pdf", b"fake_pdf_content")
     
     # Si falla, el tracker debe cambiar a 'error'
     assert tasks_db.get("hash_456") == "error"

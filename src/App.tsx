@@ -1,35 +1,56 @@
 import React, { useState } from 'react';
-import { UploadScreen } from './components/UploadScreen';
-import { useUpload } from './hooks/useUpload';
 import { ChatScreen } from './components/ChatScreen';
+import { DashboardLayout } from './components/DashboardLayout';
+import { ExpedienteList } from './components/ExpedienteList';
+import { ExpedienteDetail } from './components/ExpedienteDetail';
+import { useExpedientes } from './hooks/useExpedientes';
 
 function App() {
-  const [documentId, setDocumentId] = useState<string | null>(null);
+  const [activeExpedienteId, setActiveExpedienteId] = useState<string | null>(null);
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
 
-  const { status, progress, errorMessage, uploadFile, retry } = useUpload((taskId) => {
-    // Cuando el polling es exitoso, pasamos al chat
-    setDocumentId(taskId);
-  });
+  const { expedientes, isLoading, error, createExpediente, updateExpediente, deleteExpediente } = useExpedientes();
+
+  const activeExpediente = expedientes.find(e => e.id === activeExpedienteId);
 
   return (
-    <div className="min-h-screen bg-brand-darkest text-gray-200 font-sans p-4">
-      <div className="max-w-5xl mx-auto h-[90vh] flex flex-col">
-        {!documentId ? (
-          <UploadScreen 
-            status={status}
-            progress={progress}
-            errorMessage={errorMessage}
-            onFileSelect={uploadFile}
-            onRetry={retry}
+    <DashboardLayout
+      activeDocumentId={activeDocumentId}
+      onSelectDocument={(id) => {
+         // Sidebar is temporarily disabled or repurposed, but we keep the prop
+         setActiveDocumentId(id);
+      }}
+      onNewDocument={() => {
+         setActiveDocumentId(null);
+         setActiveExpedienteId(null);
+      }}
+      refreshTrigger={0}
+    >
+      <div className="max-w-5xl mx-auto h-full flex flex-col">
+        {activeDocumentId ? (
+          <ChatScreen 
+            documentId={activeDocumentId} 
+            onReset={() => setActiveDocumentId(null)} 
+          />
+        ) : activeExpedienteId && activeExpediente ? (
+          <ExpedienteDetail 
+            expediente={activeExpediente} 
+            onBack={() => setActiveExpedienteId(null)}
+            onChatDocument={(taskId) => setActiveDocumentId(taskId)}
           />
         ) : (
-          <ChatScreen 
-            documentId={documentId} 
-            onReset={() => setDocumentId(null)} 
+          <ExpedienteList 
+            expedientes={expedientes}
+            isLoading={isLoading}
+            error={error}
+            onSelect={setActiveExpedienteId}
+            onCreate={createExpediente}
+            onRename={updateExpediente}
+            onDelete={deleteExpediente}
           />
         )}
       </div>
-    </div>
+    </DashboardLayout>
   );
 }
 

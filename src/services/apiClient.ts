@@ -1,4 +1,4 @@
-import { UploadResponse, StatusResponse, ChatRequest } from '../types/api';
+import { UploadResponse, StatusResponse, ChatRequest, DocumentRecord } from '../types/api';
 
 const API_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_BACKEND_URL) || 'http://localhost:8000';
 const API_KEY = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) || 'default_dev_key_change_in_production';
@@ -35,33 +35,103 @@ const handleResponse = async (response: Response) => {
 };
 
 export const apiClient = {
-  uploadDocument: async (file: File): Promise<UploadResponse> => {
+  uploadDocument: async (file: File, expedienteId: string, customName?: string): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('expediente_id', expedienteId);
+    if (customName) formData.append('custom_name', customName);
     
     try {
       const response = await fetch(`${API_URL}/api/upload`, {
         method: 'POST',
         headers: getHeaders(true),
-        body: formData
+        body: formData,
       });
+      
       return await handleResponse(response);
     } catch (error: any) {
       console.error("Upload error:", error);
-      throw new Error(error.message || "Error conectando con el backend local");
+      throw new Error(error.message || "Error al subir el documento");
     }
   },
 
   getTaskStatus: async (taskId: string): Promise<StatusResponse> => {
     try {
       const response = await fetch(`${API_URL}/api/status/${taskId}`, {
-        method: 'GET',
         headers: getHeaders()
       });
-      return await handleResponse(response);
+      
+      if (!response.ok) {
+        await handleResponse(response);
+      }
+      return await response.json();
     } catch (error: any) {
       console.error("Status check error:", error);
-      throw new Error(error.message || "Error al verificar estado de la tarea");
+      throw new Error(error.message || "Error al verificar el estado del documento");
+    }
+  },
+
+  getDocuments: async (expedienteId?: string): Promise<{ documents: DocumentRecord[] }> => {
+    try {
+      const url = expedienteId ? `${API_URL}/api/expedientes/${expedienteId}/documents` : `${API_URL}/api/documents`;
+      const response = await fetch(url, {
+        headers: getHeaders()
+      });
+      if (!response.ok) await handleResponse(response);
+      return await response.json();
+    } catch (error: any) {
+      throw new Error(error.message || "Error al cargar el historial de documentos");
+    }
+  },
+
+  getExpedientes: async (): Promise<{ expedientes: any[] }> => {
+    try {
+      const response = await fetch(`${API_URL}/api/expedientes`, { headers: getHeaders() });
+      if (!response.ok) await handleResponse(response);
+      return await response.json();
+    } catch (error: any) {
+      throw new Error(error.message || "Error al cargar expedientes");
+    }
+  },
+
+  createExpediente: async (nombre: string): Promise<any> => {
+    try {
+      const response = await fetch(`${API_URL}/api/expedientes`, {
+        method: 'POST',
+        headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre })
+      });
+      if (!response.ok) await handleResponse(response);
+      return await response.json();
+    } catch (error: any) {
+      throw new Error(error.message || "Error al crear expediente");
+    }
+  },
+
+  updateExpediente: async (id: string, nombre: string): Promise<any> => {
+    try {
+      const response = await fetch(`${API_URL}/api/expedientes/${id}`, {
+        method: 'PUT',
+        headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre })
+      });
+      if (!response.ok) await handleResponse(response);
+      return await response.json();
+    } catch (error: any) {
+      throw new Error(error.message || "Error al actualizar expediente");
+    }
+  },
+
+  deleteExpediente: async (id: string): Promise<any> => {
+    try {
+      const response = await fetch(`${API_URL}/api/expedientes/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      });
+      if (!response.ok) await handleResponse(response);
+      return await response.json();
+    } catch (error: any) {
+      throw new Error(error.message || "Error al eliminar expediente");
     }
   },
 

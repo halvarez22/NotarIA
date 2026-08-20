@@ -8,13 +8,12 @@ export interface ChatMessage {
 
 export function useChat(documentId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [streamingContent, setStreamingContent] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Guardamos el AbortController para poder cancelar la petición `fetch` en vuelo.
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Cleanup: Cancelar el stream si el componente se desmonta (ej. al cambiar de documento)
   useEffect(() => {
     return () => {
       stopGeneration();
@@ -24,12 +23,9 @@ export function useChat(documentId: string) {
   const sendMessage = async (query: string) => {
     if (!query.trim()) return;
 
-    // Agregar el mensaje del usuario inmediatamente y preparar el placeholder del asistente
-    setMessages(prev => [
-      ...prev,
-      { role: 'user', content: query },
-      { role: 'assistant', content: '' }
-    ]);
+    // Agregar solo el mensaje del usuario. El asistente se construye en streamingContent.
+    setMessages(prev => [...prev, { role: 'user', content: query }]);
+    setStreamingContent('');
     setError(null);
     setIsStreaming(true);
 
@@ -48,13 +44,13 @@ export function useChat(documentId: string) {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let currentStreamBuffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         const chunk = decoder.decode(value);
-        // Formato esperado de SSE: data: {"content": "..."}\n\n
         const lines = chunk.split('\n');
         
         for (const line of lines) {
@@ -66,13 +62,10 @@ export function useChat(documentId: string) {
             if (dataStr) {
               try {
                 const parsed = JSON.parse(dataStr);
-                // Actualizar el último mensaje (del asistente) concatenando el nuevo contenido
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  const lastMessage = newMessages[newMessages.length - 1];
-                  lastMessage.content += parsed.content || '';
-                  return newMessages;
-                });
+                // Concatenamos localmente en la función para evitar dependencias de closures
+                currentStreamBuffer += parsed.content || '';
+                // Actualizamos el estado exclusivo de streaming
+                setStreamingContent(currentStreamBuffer);
               } catch (e) {
                 // ignorar errores de parseo parciales
               }
@@ -80,13 +73,35 @@ export function useChat(documentId: string) {
           }
         }
       }
+      
+      // Una vez terminado, consolidar el buffer final en el array de mensajes
+      setMessages(prev => [...prev, { role: 'assistant', content: currentStreamBuffer }]);
+      setStreamingContent('');
+      
     } catch (err: any) {
       if (err.name === 'AbortError') {
         console.log('Generación detenida por el usuario.');
+        // Si se abortó a la mitad, guardamos lo que se haya alcanzado a generar
+        setMessages(prev => {
+           setStreamingContent(prevContent => {
+              if (prevContent) {
+                 return prevContent; 
+              }
+              return '';
+           });
+           return prev; // El setState real lo haremos abajo
+        });
+        
+        // Forma segura de obtener el valor actual:
+        setStreamingContent(current => {
+          if (current) {
+            setMessages(prevMsg => [...prevMsg, { role: 'assistant', content: current }]);
+          }
+          return '';
+        });
+
       } else {
         setError(err.message || 'Error al comunicarse con el asistente.');
-        // Opcional: remover el último mensaje vacío del asistente si falló al instante
-        setMessages(prev => prev.filter(m => m.content !== '' || m.role !== 'assistant'));
       }
     } finally {
       setIsStreaming(false);
@@ -98,12 +113,13 @@ export function useChat(documentId: string) {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
-      setIsStreaming(false);
+      // No hacemos setIsStreaming(false) aquí, dejamos que el catch del AbortError lo maneje
     }
   };
 
   return {
     messages,
+    streamingContent,
     isStreaming,
     error,
     sendMessage,

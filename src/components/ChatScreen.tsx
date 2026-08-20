@@ -7,7 +7,7 @@ interface ChatScreenProps {
 }
 
 export function ChatScreen({ documentId, onReset }: ChatScreenProps) {
-  const { messages, isStreaming, error, sendMessage, stopGeneration } = useChat(documentId);
+  const { messages, streamingContent, isStreaming, error, sendMessage, stopGeneration } = useChat(documentId);
   const [inputValue, setInputValue] = useState('');
   
   // Referencia al final del contenedor para auto-scroll
@@ -16,7 +16,7 @@ export function ChatScreen({ documentId, onReset }: ChatScreenProps) {
   // Auto-scroll suave (U-First, Regla 4)
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, streamingContent]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,11 +62,17 @@ export function ChatScreen({ documentId, onReset }: ChatScreenProps) {
                   : 'bg-brand-medium text-white rounded-bl-none'
               }`}
             >
-              {/* Contenido con pre-wrap para saltos de línea */}
               <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-              
-              {/* Indicador de "Escribiendo..." animado si es el asistente y el contenido está vacío (buffer esperando el primer token) */}
-              {isStreaming && msg.role === 'assistant' && msg.content === '' && (
+            </div>
+          </div>
+        ))}
+        
+        {/* Burbuja temporal del asistente para el streaming (Fase 1) */}
+        {isStreaming && (
+          <div className="flex justify-start">
+            <div className="max-w-[80%] p-4 rounded-xl shadow bg-brand-medium text-white rounded-bl-none">
+              <p className="whitespace-pre-wrap leading-relaxed">{streamingContent}</p>
+              {streamingContent === '' && (
                 <div className="flex space-x-1 items-center h-4 mt-2">
                   <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                   <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
@@ -75,7 +81,7 @@ export function ChatScreen({ documentId, onReset }: ChatScreenProps) {
               )}
             </div>
           </div>
-        ))}
+        )}
         
         {/* Error Bubble */}
         {error && (
