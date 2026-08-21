@@ -43,8 +43,10 @@ export async function POST(request: Request) {
         embedding = ollamaResponse.data.embedding;
       }
     } catch (e: any) {
-      console.error("Error generating embedding:", e.message);
-      return NextResponse.json({ error: 'Fallo al generar el vector de búsqueda (Ollama/HF)' }, { status: 500 });
+      console.error("Error generating embedding:", e.response?.data || e.message);
+      return NextResponse.json({ 
+        error: `Fallo al generar el vector de búsqueda (Ollama/HF). Detalles: ${JSON.stringify(e.response?.data || e.message)}` 
+      }, { status: 500 });
     }
 
     // 3. Ejecutar la búsqueda semántica en Supabase usando pgvector (vía RPC)
