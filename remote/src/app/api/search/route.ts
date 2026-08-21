@@ -1,6 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import axios from 'axios'
+import { pipeline, env } from '@xenova/transformers'
+
+// Configuracion critica para Vercel Serverless
+env.allowLocalModels = false;
+env.useBrowserCache = false;
+if (process.env.VERCEL) {
+  env.cacheDir = '/tmp/xenova-cache';
+}
+
+// Mantiene el modelo en memoria entre ejecuciones (Cold Start mitigado)
+let extractor: any = null;
 
 export async function POST(request: Request) {
   try {
@@ -20,30 +31,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Query es requerido' }, { status: 400 })
     }
 
-    const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
     let embedding: number[] = [];
 
     try {
-      // 2. Obtener el embedding usando OpenAI
-      const openAiResponse = await axios.post(
-        'https://api.openai.com/v1/embeddings',
-        {
-          input: `search_query: ${query}`,
-          model: "text-embedding-3-small"
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      embedding = openAiResponse.data.data[0].embedding;
+      if (!extractor) {
+        console.log('Descargando e inicializando modelo de embeddings en Vercel...');
+        extractor = await pipeline('feature-extraction', 'Xenova/nomic-embed-text-v1.5', {
+          quantized: true // 80MB para descarga ultrarrápida
+        });
+      }
+      
+      const output = await extractor(query, { pooling: 'mean', normalize: true });
+      embedding = Array.from(output.data);
+
     } catch (e: any) {
-      console.error("Error generating embedding:", e.response?.data || e.message);
-      return NextResponse.json({ 
-        error: `Fallo al generar el vector de búsqueda (OpenAI). Detalles: ${JSON.stringify(e.response?.data || e.message)}` 
-      }, { status: 500 });
+      console.error("Error en Transformers.js:", e.message);
+      if (e.message?.includes('timeout') || e.code === 'ETIMEDOUT') {
+        return NextResponse.json(
+          { error: 'El modelo se está descargando en Vercel. Por favor, reintenta en 10 segundos.' }, 
+          { status: 503 }
+        );
+      }
+      return NextResponse.json({ error: 'Fallo interno al generar el vector en Vercel' }, { status: 500 });
     }
 
     // 3. Ejecutar la búsqueda semántica en Supabase usando pgvector (vía RPC)
