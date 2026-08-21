@@ -24,28 +24,25 @@ export async function POST(request: Request) {
     let embedding: number[] = [];
 
     try {
-      // 2. Obtener el embedding de la pregunta
-      if (ollamaUrl.includes('127.0.0.1') && process.env.HUGGINGFACE_API_KEY) {
-        // En Vercel (o si está configurado así), usar HuggingFace para no fallar por localhost
-        const hfResponse = await axios.post(
-          'https://api-inference.huggingface.co/pipeline/feature-extraction/nomic-ai/nomic-embed-text-v1.5',
-          { inputs: `search_query: ${query}` },
-          { headers: { 'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
-        );
-        embedding = hfResponse.data;
-      } else {
-        // Entorno local usando Ollama
-        const ollamaResponse = await axios.post(
-          `${ollamaUrl}/api/embeddings`,
-          { model: 'nomic-embed-text', prompt: `search_query: ${query}` },
-          { headers: { 'Content-Type': 'application/json' } }
-        );
-        embedding = ollamaResponse.data.embedding;
-      }
+      // 2. Obtener el embedding usando OpenAI
+      const openAiResponse = await axios.post(
+        'https://api.openai.com/v1/embeddings',
+        {
+          input: `search_query: ${query}`,
+          model: "text-embedding-3-small"
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      embedding = openAiResponse.data.data[0].embedding;
     } catch (e: any) {
       console.error("Error generating embedding:", e.response?.data || e.message);
       return NextResponse.json({ 
-        error: `Fallo al generar el vector de búsqueda (Ollama/HF). Detalles: ${JSON.stringify(e.response?.data || e.message)}` 
+        error: `Fallo al generar el vector de búsqueda (OpenAI). Detalles: ${JSON.stringify(e.response?.data || e.message)}` 
       }, { status: 500 });
     }
 
