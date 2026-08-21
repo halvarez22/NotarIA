@@ -20,22 +20,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Query es requerido' }, { status: 400 })
     }
 
-    // 2. Llamada a Ollama Local para obtener el embedding (ya que estamos en desarrollo)
-    // Modelo: nomic-embed-text
-    const ollamaResponse = await axios.post(
-      'http://127.0.0.1:11434/api/embeddings',
-      {
-        model: 'nomic-embed-text',
-        prompt: `search_query: ${query}`
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    )
+    const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+    let embedding: number[] = [];
 
-    const embedding = ollamaResponse.data.embedding;
+    try {
+      // 2. Obtener el embedding de la pregunta
+      if (ollamaUrl.includes('127.0.0.1') && process.env.HUGGINGFACE_API_KEY) {
+        // En Vercel (o si está configurado así), usar HuggingFace para no fallar por localhost
+        const hfResponse = await axios.post(
+          'https://api-inference.huggingface.co/pipeline/feature-extraction/nomic-ai/nomic-embed-text-v1.5',
+          { inputs: `search_query: ${query}` },
+          { headers: { 'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
+        );
+        embedding = hfResponse.data;
+      } else {
+        // Entorno local usando Ollama
+        const ollamaResponse = await axios.post(
+          `${ollamaUrl}/api/embeddings`,
+          { model: 'nomic-embed-text', prompt: `search_query: ${query}` },
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+        embedding = ollamaResponse.data.embedding;
+      }
+    } catch (e: any) {
+      console.error("Error generating embedding:", e.message);
+      return NextResponse.json({ error: 'Fallo al generar el vector de búsqueda (Ollama/HF)' }, { status: 500 });
+    }
 
     // 3. Ejecutar la búsqueda semántica en Supabase usando pgvector (vía RPC)
     // Usamos el cliente autenticado (el que tiene los tokens de sesión)
