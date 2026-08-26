@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import axios from 'axios'
+import { pipeline, env } from '@xenova/transformers'
+
+export const runtime = 'edge';
+
+// Configuracion critica para Vercel Edge
+env.allowLocalModels = false;
+env.useBrowserCache = false;
+env.backends.onnx.wasm.proxy = false; // Edge no tiene Web Workers
+env.backends.onnx.wasm.numThreads = 1;
+
 // Mantiene el modelo en memoria entre ejecuciones (Cold Start mitigado)
 let extractor: any = null;
-let transformers: any = null;
 
 // Mapa en memoria para Rate Limiting
 const userRateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -51,31 +59,9 @@ export async function POST(request: Request) {
 
     // ESTRATEGIA DE FALLBACK (Auditoría: Pregunta 3)
     try {
-      if (!transformers) {
-        console.log('Importando Transformers.js versión BROWSER dinámicamente...');
-        
-        // Polyfill crítico para el browser bundle en Node.js
-        if (typeof global !== 'undefined' && !(global as any).self) {
-          (global as any).self = global;
-        }
-        
-        // @ts-ignore
-        transformers = await import('@xenova/transformers/dist/transformers.min.js');
-        
-        // Configuracion critica para Vercel Serverless con WASM
-        transformers.env.allowLocalModels = false;
-        transformers.env.useBrowserCache = false;
-        if (process.env.VERCEL) {
-          transformers.env.cacheDir = '/tmp/xenova-cache';
-          // FORZAR WASM: El bundle del navegador usa onnxruntime-web internamente
-          transformers.env.backends.onnx.wasm.proxy = true;
-          transformers.env.backends.onnx.wasm.numThreads = 1;
-        }
-      }
-
       if (!extractor) {
-        console.log('Inicializando WASM Embedding Engine en Vercel...');
-        extractor = await transformers.pipeline('feature-extraction', 'Xenova/nomic-embed-text-v1.5', {
+        console.log('Inicializando WASM Embedding Engine en Vercel Edge...');
+        extractor = await pipeline('feature-extraction', 'Xenova/nomic-embed-text-v1.5', {
           quantized: true,
         });
       }
@@ -88,16 +74,25 @@ export async function POST(request: Request) {
       
       try {
         // Fallback a Hugging Face Inference API
-        const hfResponse = await axios.post(
-          'https://api-inference.huggingface.co/models/nomic-ai/nomic-embed-text-v1.5',
-          { inputs: query },
-          { headers: { 'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
-        );
+        const hfResponse = await fetch('https://api-inference.huggingface.co/models/nomic-ai/nomic-embed-text-v1.5', {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ inputs: query })
+        });
         
-        if (!hfResponse.data || !Array.isArray(hfResponse.data)) {
+        if (!hfResponse.ok) {
+           throw new Error(`HTTP Error: ${hfResponse.status}`);
+        }
+        
+        const data = await hfResponse.json();
+        
+        if (!data || !Array.isArray(data)) {
            throw new Error("Respuesta inválida");
         }
-        embedding = Array.isArray(hfResponse.data[0]) ? hfResponse.data[0] : hfResponse.data;
+        embedding = Array.isArray(data[0]) ? data[0] : data;
       } catch (hfError: any) {
         throw new Error(`Motor interno falló por [${e.message}] Y HF API falló por [${hfError.message}]`);
       }
@@ -127,9 +122,13 @@ export async function POST(request: Request) {
         contextText = contextText.substring(0, 24000);
       }
       
-      const groqResponse = await axios.post(
-        'https://api.groq.com/openai/v1/chat/completions',
-        {
+      const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
           model: "openai/gpt-oss-120b",
           messages: [
             {
@@ -153,16 +152,15 @@ ${contextText}`
           ],
           temperature: 0.5,
           max_tokens: 2500
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+        })
+      });
 
-      const message = groqResponse.data.choices[0].message;
+      if (!groqResponse.ok) {
+        throw new Error(`Groq API Error: ${groqResponse.status}`);
+      }
+
+      const groqData = await groqResponse.json();
+      const message = groqData.choices[0].message;
       
       if (message.reasoning) {
         botContent = `<think>\n${message.reasoning}\n</think>\n\n${message.content}`;
