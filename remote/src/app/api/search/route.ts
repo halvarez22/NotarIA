@@ -52,22 +52,19 @@ export async function POST(request: Request) {
     // ESTRATEGIA DE FALLBACK (Auditoría: Pregunta 3)
     try {
       if (!transformers) {
-        console.log('Importando Transformers.js dinámicamente para prevenir Vercel Boot Crash...');
-        // Dynamic import previene que Vercel muera al arrancar si falta el binario .so
+        console.log('Importando Transformers.js dinámicamente...');
         transformers = await import('@xenova/transformers');
         
-        // Configuracion critica para Vercel Serverless con WASM
+        // Configuracion critica para Vercel Serverless
         transformers.env.allowLocalModels = false;
         transformers.env.useBrowserCache = false;
         if (process.env.VERCEL) {
           transformers.env.cacheDir = '/tmp/xenova-cache';
-          transformers.env.backends.onnx.wasm.proxy = true;
-          transformers.env.backends.onnx.wasm.numThreads = 1;
         }
       }
 
       if (!extractor) {
-        console.log('Inicializando WASM Embedding Engine en Vercel...');
+        console.log('Inicializando Embedding Engine en Vercel...');
         extractor = await transformers.pipeline('feature-extraction', 'Xenova/nomic-embed-text-v1.5', {
           quantized: true,
         });
@@ -77,7 +74,7 @@ export async function POST(request: Request) {
       embedding = Array.from(output.data);
 
     } catch (e: any) {
-      console.warn("WASM Engine falló:", e.message);
+      console.warn("Embedding Engine falló:", e.message);
       
       try {
         // Fallback a Hugging Face Inference API
@@ -92,7 +89,7 @@ export async function POST(request: Request) {
         }
         embedding = Array.isArray(hfResponse.data[0]) ? hfResponse.data[0] : hfResponse.data;
       } catch (hfError: any) {
-        throw new Error(`WASM falló por [${e.message}] Y HF API falló por [${hfError.message}]`);
+        throw new Error(`Motor interno falló por [${e.message}] Y HF API falló por [${hfError.message}]`);
       }
     }
 
