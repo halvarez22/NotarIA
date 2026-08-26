@@ -52,19 +52,29 @@ export async function POST(request: Request) {
     // ESTRATEGIA DE FALLBACK (Auditoría: Pregunta 3)
     try {
       if (!transformers) {
-        console.log('Importando Transformers.js dinámicamente...');
-        transformers = await import('@xenova/transformers');
+        console.log('Importando Transformers.js versión BROWSER dinámicamente...');
         
-        // Configuracion critica para Vercel Serverless
+        // Polyfill crítico para el browser bundle en Node.js
+        if (typeof global !== 'undefined' && !(global as any).self) {
+          (global as any).self = global;
+        }
+        
+        // @ts-ignore
+        transformers = await import('@xenova/transformers/dist/transformers.min.js');
+        
+        // Configuracion critica para Vercel Serverless con WASM
         transformers.env.allowLocalModels = false;
         transformers.env.useBrowserCache = false;
         if (process.env.VERCEL) {
           transformers.env.cacheDir = '/tmp/xenova-cache';
+          // FORZAR WASM: El bundle del navegador usa onnxruntime-web internamente
+          transformers.env.backends.onnx.wasm.proxy = true;
+          transformers.env.backends.onnx.wasm.numThreads = 1;
         }
       }
 
       if (!extractor) {
-        console.log('Inicializando Embedding Engine en Vercel...');
+        console.log('Inicializando WASM Embedding Engine en Vercel...');
         extractor = await transformers.pipeline('feature-extraction', 'Xenova/nomic-embed-text-v1.5', {
           quantized: true,
         });
