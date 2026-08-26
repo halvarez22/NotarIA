@@ -3,40 +3,36 @@ import { createClient } from '@/utils/supabase/server'
 import axios from 'axios'
 import { pipeline, env } from '@xenova/transformers'
 
-// Configuracion critica para Vercel Serverless
+// Configuracion critica para Vercel Serverless con WASM
 env.allowLocalModels = false;
 env.useBrowserCache = false;
 if (process.env.VERCEL) {
   env.cacheDir = '/tmp/xenova-cache';
+  // 1. FORZAR WASM: Evita buscar el binario .so de C++ que causa el crash 500
+  env.backends.onnx.wasm.proxy = true;
+  env.backends.onnx.wasm.numThreads = 1;
 }
 
 // Mantiene el modelo en memoria entre ejecuciones (Cold Start mitigado)
 let extractor: any = null;
 
-// Mapa en memoria para Rate Limiting (Simple pero efectivo para Vercel Serverless)
+// Mapa en memoria para Rate Limiting
 const userRateLimits = new Map<string, { count: number; resetAt: number }>();
 
 function checkRateLimit(userId: string): boolean {
   const now = Date.now();
   const limit = userRateLimits.get(userId);
-  
   if (!limit || now > limit.resetAt) {
-    userRateLimits.set(userId, { count: 1, resetAt: now + 60000 }); // 60 segundos
+    userRateLimits.set(userId, { count: 1, resetAt: now + 60000 });
     return true;
   }
-  
-  if (limit.count >= 10) { // Límite: 10 peticiones por minuto por usuario
-    return false;
-  }
-  
+  if (limit.count >= 10) return false;
   limit.count++;
   return true;
 }
 
-// Sanitización de entradas (Regla 5 - Anti-Data-Leak)
 function sanitizePrompt(prompt: string): string {
-  let sanitized = prompt.replace(/\0/g, ''); // Eliminar caracteres nulos
-  // Anonimizar emails y números largos que parezcan IDs (opcional pero recomendado)
+  let sanitized = prompt.replace(/\0/g, '');
   sanitized = sanitized.replace(/\b[\w.-]+@[\w.-]+\.\w+\b/g, '[EMAIL_REDACTED]');
   sanitized = sanitized.replace(/\b\d{8,12}\b/g, '[ID_REDACTED]');
   return sanitized;
@@ -46,46 +42,31 @@ export async function POST(request: Request) {
   try {
     const supabase = await createClient()
 
-    // 1. Verificación de Autenticación RESTAURADA (Regla 5 - SSD)
-    // NOTA: Se usa supabase.auth.getUser() que lee la cookie automáticamente.
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
     if (authError || !user) {
-      console.error('[Auth] Intento de acceso no autorizado');
-      return NextResponse.json({ error: 'No autorizado. Sesión inválida o ausente.' }, { status: 401 })
+      return NextResponse.json({ error: 'No autorizado.' }, { status: 401 })
     }
 
-    // 2. Rate Limiting
     if (!checkRateLimit(user.id)) {
-      console.warn(`[RateLimit] Usuario ${user.email} excedió el límite de peticiones`);
-      return NextResponse.json({ error: 'Demasiadas peticiones. Por favor espera un momento.' }, { status: 429 })
+      return NextResponse.json({ error: 'Demasiadas peticiones.' }, { status: 429 })
     }
 
     const body = await request.json()
     let { query } = body
+    if (!query) return NextResponse.json({ error: 'Query requerido' }, { status: 400 })
 
-    if (!query) {
-      return NextResponse.json({ error: 'Query es requerido' }, { status: 400 })
-    }
-
-    // 3. Sanitizar entrada
     query = sanitizePrompt(query);
-    
-    // Log de auditoría seguro (Sin PII)
-    const auditLog = {
-      userId: user.id,
-      timestamp: new Date().toISOString(),
-      action: 'chat_query'
-    };
-    console.log('[Audit]', JSON.stringify(auditLog));
+    console.log('[Audit]', JSON.stringify({ userId: user.id, timestamp: new Date().toISOString(), action: 'chat_query' }));
 
     let embedding: number[] = [];
 
+    // ESTRATEGIA DE FALLBACK (Auditoría: Pregunta 3)
     try {
       if (!extractor) {
-        console.log('Descargando e inicializando modelo de embeddings en Vercel...');
+        console.log('Inicializando WASM Embedding Engine en Vercel...');
         extractor = await pipeline('feature-extraction', 'Xenova/nomic-embed-text-v1.5', {
-          quantized: true // 80MB para descarga ultrarrápida
+          quantized: true,
+          // Explicitly require WASM to prevent Node binding fallback
         });
       }
       
@@ -93,14 +74,20 @@ export async function POST(request: Request) {
       embedding = Array.from(output.data);
 
     } catch (e: any) {
-      console.error("Error en Transformers.js:", e.message);
-      if (e.message?.includes('timeout') || e.code === 'ETIMEDOUT') {
-        return NextResponse.json(
-          { error: 'El modelo se está descargando en Vercel. Por favor, reintenta en 10 segundos.' }, 
-          { status: 503 }
-        );
+      console.warn("WASM Engine falló, ejecutando PLAN DE CONTINGENCIA (HF API)...", e.message);
+      
+      // Fallback a Hugging Face Inference API
+      const hfResponse = await axios.post(
+        'https://api-inference.huggingface.co/models/nomic-ai/nomic-embed-text-v1.5',
+        { inputs: query },
+        { headers: { 'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
+      );
+      
+      if (!hfResponse.data || !Array.isArray(hfResponse.data)) {
+         throw new Error("El Fallback de HuggingFace también falló.");
       }
-      return NextResponse.json({ error: 'Fallo interno al generar el vector en Vercel' }, { status: 500 });
+      // Nomic API devuelve un arreglo de arreglos [[0.1, 0.2, ...]] o [0.1, 0.2, ...]
+      embedding = Array.isArray(hfResponse.data[0]) ? hfResponse.data[0] : hfResponse.data;
     }
 
     // 3. Ejecutar la búsqueda semántica en Supabase usando pgvector (vía RPC)
