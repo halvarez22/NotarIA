@@ -13,23 +13,64 @@ if (process.env.VERCEL) {
 // Mantiene el modelo en memoria entre ejecuciones (Cold Start mitigado)
 let extractor: any = null;
 
+// Mapa en memoria para Rate Limiting (Simple pero efectivo para Vercel Serverless)
+const userRateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const limit = userRateLimits.get(userId);
+  
+  if (!limit || now > limit.resetAt) {
+    userRateLimits.set(userId, { count: 1, resetAt: now + 60000 }); // 60 segundos
+    return true;
+  }
+  
+  if (limit.count >= 10) { // Límite: 10 peticiones por minuto por usuario
+    return false;
+  }
+  
+  limit.count++;
+  return true;
+}
+
+// Sanitización de entradas (Regla 5 - Anti-Data-Leak)
+function sanitizePrompt(prompt: string): string {
+  let sanitized = prompt.replace(/\0/g, ''); // Eliminar caracteres nulos
+  // Anonimizar emails y números largos que parezcan IDs (opcional pero recomendado)
+  sanitized = sanitized.replace(/\b[\w.-]+@[\w.-]+\.\w+\b/g, '[EMAIL_REDACTED]');
+  sanitized = sanitized.replace(/\b\d{8,12}\b/g, '[ID_REDACTED]');
+  return sanitized;
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
 
-    // 1. Verificación de Autenticación (Regla 5 - SSD)
-    // BYPASS TEMPORAL POR RATE LIMIT DE SUPABASE EN DESARROLLO
-    // const { data: { user } } = await supabase.auth.getUser()
-    // if (!user) {
-    //  return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    // }
+    // 1. Verificación de Autenticación RESTAURADA (Regla 5 - SSD)
+    // NOTA: Se usa supabase.auth.getUser() que lee la cookie automáticamente.
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      console.error('[Auth] Intento de acceso no autorizado');
+      return NextResponse.json({ error: 'No autorizado. Sesión inválida o ausente.' }, { status: 401 })
+    }
+
+    // 2. Rate Limiting
+    if (!checkRateLimit(user.id)) {
+      console.warn(`[RateLimit] Usuario ${user.email} excedió el límite de peticiones`);
+      return NextResponse.json({ error: 'Demasiadas peticiones. Por favor espera un momento.' }, { status: 429 })
+    }
 
     const body = await request.json()
-    const { query } = body
+    let { query } = body
 
     if (!query) {
       return NextResponse.json({ error: 'Query es requerido' }, { status: 400 })
     }
+
+    // 3. Sanitizar entrada
+    query = sanitizePrompt(query);
+    console.log(`[Audit] Usuario ${user.email} consultó: "${query.substring(0, 50)}..."`);
 
     let embedding: number[] = [];
 
