@@ -176,6 +176,6 @@ ${contextText}`
 
   } catch (error: any) {
     console.error("Search API Error:", error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return NextResponse.json({ error: `Error interno: ${error.message || error}` }, { status: 500 })
   }
 }
