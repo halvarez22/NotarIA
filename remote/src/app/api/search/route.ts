@@ -77,20 +77,23 @@ export async function POST(request: Request) {
       embedding = Array.from(output.data);
 
     } catch (e: any) {
-      console.warn("WASM Engine falló, ejecutando PLAN DE CONTINGENCIA (HF API)...", e.message);
+      console.warn("WASM Engine falló:", e.message);
       
-      // Fallback a Hugging Face Inference API
-      const hfResponse = await axios.post(
-        'https://api-inference.huggingface.co/models/nomic-ai/nomic-embed-text-v1.5',
-        { inputs: query },
-        { headers: { 'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
-      );
-      
-      if (!hfResponse.data || !Array.isArray(hfResponse.data)) {
-         throw new Error("El Fallback de HuggingFace también falló.");
+      try {
+        // Fallback a Hugging Face Inference API
+        const hfResponse = await axios.post(
+          'https://api-inference.huggingface.co/models/nomic-ai/nomic-embed-text-v1.5',
+          { inputs: query },
+          { headers: { 'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}` } }
+        );
+        
+        if (!hfResponse.data || !Array.isArray(hfResponse.data)) {
+           throw new Error("Respuesta inválida");
+        }
+        embedding = Array.isArray(hfResponse.data[0]) ? hfResponse.data[0] : hfResponse.data;
+      } catch (hfError: any) {
+        throw new Error(`WASM falló por [${e.message}] Y HF API falló por [${hfError.message}]`);
       }
-      // Nomic API devuelve un arreglo de arreglos [[0.1, 0.2, ...]] o [0.1, 0.2, ...]
-      embedding = Array.isArray(hfResponse.data[0]) ? hfResponse.data[0] : hfResponse.data;
     }
 
     // 3. Ejecutar la búsqueda semántica en Supabase usando pgvector (vía RPC)
