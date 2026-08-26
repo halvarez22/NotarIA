@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     try {
       if (!extractor) {
         console.log('Inicializando WASM Embedding Engine en Vercel Edge...');
-        extractor = await pipeline('feature-extraction', 'Xenova/nomic-embed-text-v1.5', {
+        extractor = await pipeline('feature-extraction', 'nomic-ai/nomic-embed-text-v1.5', {
           quantized: true,
         });
       }
