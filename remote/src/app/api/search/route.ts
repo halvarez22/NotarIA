@@ -1,20 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import axios from 'axios'
-import { pipeline, env } from '@xenova/transformers'
-
-// Configuracion critica para Vercel Serverless con WASM
-env.allowLocalModels = false;
-env.useBrowserCache = false;
-if (process.env.VERCEL) {
-  env.cacheDir = '/tmp/xenova-cache';
-  // 1. FORZAR WASM: Evita buscar el binario .so de C++ que causa el crash 500
-  env.backends.onnx.wasm.proxy = true;
-  env.backends.onnx.wasm.numThreads = 1;
-}
-
 // Mantiene el modelo en memoria entre ejecuciones (Cold Start mitigado)
 let extractor: any = null;
+let transformers: any = null;
 
 // Mapa en memoria para Rate Limiting
 const userRateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -62,11 +51,25 @@ export async function POST(request: Request) {
 
     // ESTRATEGIA DE FALLBACK (Auditoría: Pregunta 3)
     try {
+      if (!transformers) {
+        console.log('Importando Transformers.js dinámicamente para prevenir Vercel Boot Crash...');
+        // Dynamic import previene que Vercel muera al arrancar si falta el binario .so
+        transformers = await import('@xenova/transformers');
+        
+        // Configuracion critica para Vercel Serverless con WASM
+        transformers.env.allowLocalModels = false;
+        transformers.env.useBrowserCache = false;
+        if (process.env.VERCEL) {
+          transformers.env.cacheDir = '/tmp/xenova-cache';
+          transformers.env.backends.onnx.wasm.proxy = true;
+          transformers.env.backends.onnx.wasm.numThreads = 1;
+        }
+      }
+
       if (!extractor) {
         console.log('Inicializando WASM Embedding Engine en Vercel...');
-        extractor = await pipeline('feature-extraction', 'Xenova/nomic-embed-text-v1.5', {
+        extractor = await transformers.pipeline('feature-extraction', 'Xenova/nomic-embed-text-v1.5', {
           quantized: true,
-          // Explicitly require WASM to prevent Node binding fallback
         });
       }
       
