@@ -70,7 +70,14 @@ export async function POST(request: Request) {
 
     // 3. Sanitizar entrada
     query = sanitizePrompt(query);
-    console.log(`[Audit] Usuario ${user.email} consultó: "${query.substring(0, 50)}..."`);
+    
+    // Log de auditoría seguro (Sin PII)
+    const auditLog = {
+      userId: user.id,
+      timestamp: new Date().toISOString(),
+      action: 'chat_query'
+    };
+    console.log('[Audit]', JSON.stringify(auditLog));
 
     let embedding: number[] = [];
 
